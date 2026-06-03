@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
 import {
@@ -47,6 +48,7 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const supabase = createClient();
+  const { accountId } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -252,6 +254,7 @@ export function ContactDetailView({
 
     const { error } = await supabase.from('contact_notes').insert({
       contact_id: contactId,
+      account_id: accountId,
       user_id: user.id,
       note_text: newNote.trim(),
     });
@@ -655,7 +658,7 @@ export function ContactDetailView({
                             <DollarSign className="size-3" />
                             {new Intl.NumberFormat('en-US', {
                               style: 'currency',
-                              currency: deal.currency || 'USD',
+                              currency: deal.currency || 'INR',
                               maximumFractionDigits: 0,
                             }).format(Number(deal.value || 0))}
                           </span>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentAccount } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   deleteMessageTemplate,
@@ -55,14 +55,11 @@ export async function PATCH(
         { status: 400 },
       )
     }
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const ctx = await getCurrentAccount().catch(() => null)
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const { supabase, accountId } = ctx
 
     let payload: TemplatePayload
     try {
@@ -77,7 +74,7 @@ export async function PATCH(
       .from('message_templates')
       .select('id, name, status, meta_template_id, language')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -127,7 +124,7 @@ export async function PATCH(
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -215,20 +212,17 @@ export async function DELETE(
         { status: 400 },
       )
     }
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const ctx = await getCurrentAccount().catch(() => null)
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const { supabase, accountId } = ctx
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
       .select('id, name, meta_template_id')
       .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
     if (lookupErr || !existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -238,7 +232,7 @@ export async function DELETE(
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(

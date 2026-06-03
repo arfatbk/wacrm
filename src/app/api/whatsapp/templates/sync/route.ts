@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentAccount } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
@@ -124,21 +124,16 @@ function extractSampleValues(
 
 export async function POST() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    const ctx = await getCurrentAccount().catch(() => null)
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const { supabase, userId, accountId } = ctx
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .single()
 
     if (configError || !config) {
@@ -218,7 +213,8 @@ export async function POST() {
           : null
 
       const row = {
-        user_id: user.id,
+        user_id: userId,
+        account_id: accountId,
         name: t.name,
         category: normalizeCategory(t.category),
         language: t.language,
@@ -238,7 +234,7 @@ export async function POST() {
       const { data: existing, error: lookupErr } = await supabase
         .from('message_templates')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .eq('name', t.name)
         .eq('language', t.language)
         .maybeSingle()

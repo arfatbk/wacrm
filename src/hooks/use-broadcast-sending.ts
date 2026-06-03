@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -142,6 +143,7 @@ async function fetchCustomValueIndex(
 export function useBroadcastSending(): UseBroadcastSendingReturn {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const { accountId } = useAuth();
 
   async function resolveAudience(audience: AudienceConfig): Promise<Contact[]> {
     const supabase = createClient();
@@ -249,6 +251,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       .filter((p) => !byPhone.has(p))
       .map((phone) => ({
         user_id: user.id,
+        account_id: accountId,
         phone,
         name: uniqueByPhone.get(phone)?.name ?? null,
       }));
@@ -341,6 +344,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         .from('broadcasts')
         .insert({
           user_id: user.id,
+          account_id: accountId,
           name: payload.name,
           template_name: payload.template.name,
           template_language: payload.template.language ?? 'en_US',

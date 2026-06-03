@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentAccount } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
 
@@ -14,17 +14,14 @@ import { getFlowTemplate } from '@/lib/flows/templates'
  */
 
 async function requireUser(): Promise<
-  | { ok: true; userId: string; supabase: Awaited<ReturnType<typeof createClient>> }
+  | { ok: true; userId: string; accountId: string; supabase: Awaited<ReturnType<typeof getCurrentAccount>>['supabase'] }
   | { ok: false; status: number; body: { error: string } }
 > {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
+  const ctx = await getCurrentAccount().catch(() => null)
+  if (!ctx) {
     return { ok: false, status: 401, body: { error: 'Unauthorized' } }
   }
-  return { ok: true, userId: user.id, supabase }
+  return { ok: true, userId: ctx.userId, accountId: ctx.accountId, supabase: ctx.supabase }
 }
 
 export async function GET() {
@@ -49,7 +46,7 @@ export async function POST(request: Request) {
   if (!guard.ok) {
     return NextResponse.json(guard.body, { status: guard.status })
   }
-  const { userId } = guard
+  const { userId, accountId } = guard
 
   const body = (await request.json().catch(() => null)) as
     | {
@@ -85,6 +82,7 @@ export async function POST(request: Request) {
       .from('flows')
       .insert({
         user_id: userId,
+        account_id: accountId,
         name: body.name?.trim() || template.name,
         description: template.description,
         status: 'draft',
@@ -133,6 +131,7 @@ export async function POST(request: Request) {
     .from('flows')
     .insert({
       user_id: userId,
+      account_id: accountId,
       name: body.name.trim(),
       description: body.description ?? null,
       status: 'draft',

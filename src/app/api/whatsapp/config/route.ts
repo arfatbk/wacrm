@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { requireRole, getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
 import {
   registerPhoneNumber,
   subscribeWabaToApp,
@@ -39,21 +39,16 @@ function supabaseAdmin() {
  */
 export async function GET() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    const ctx = await getCurrentAccount().catch(() => null)
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const { supabase, accountId } = ctx
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token, status')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     if (configError) {
@@ -130,16 +125,13 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let ctx: Awaited<ReturnType<typeof requireRole>>
+    try {
+      ctx = await requireRole('admin')
+    } catch (err) {
+      return toErrorResponse(err)
     }
+    const { supabase, userId, accountId } = ctx
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -167,9 +159,9 @@ export async function POST(request: Request) {
     // inbound message. See issue #136.
     const { data: claimed, error: claimedError } = await supabaseAdmin()
       .from('whatsapp_config')
-      .select('user_id')
+      .select('account_id')
       .eq('phone_number_id', phone_number_id)
-      .neq('user_id', user.id)
+      .neq('account_id', accountId)
       .maybeSingle()
 
     if (claimedError) {
@@ -230,7 +222,7 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from('whatsapp_config')
       .select('id, registered_at, phone_number_id')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .maybeSingle()
 
     const sameNumber =
@@ -318,7 +310,7 @@ export async function POST(request: Request) {
       const { error: updateError } = await supabase
         .from('whatsapp_config')
         .update(baseRow)
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -330,7 +322,7 @@ export async function POST(request: Request) {
     } else {
       const { error: insertError } = await supabase
         .from('whatsapp_config')
-        .insert({ user_id: user.id, ...baseRow })
+        .insert({ user_id: userId, account_id: accountId, ...baseRow })
 
       if (insertError) {
         console.error('Error inserting whatsapp_config:', insertError)
@@ -375,21 +367,18 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let ctx: Awaited<ReturnType<typeof requireRole>>
+    try {
+      ctx = await requireRole('admin')
+    } catch (err) {
+      return toErrorResponse(err)
     }
+    const { supabase, accountId } = ctx
 
     const { error: deleteError } = await supabase
       .from('whatsapp_config')
       .delete()
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)

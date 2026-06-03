@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentAccount } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
 import {
@@ -17,6 +17,7 @@ import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
  */
 function buildUpsertRow(
   userId: string,
+  accountId: string,
   payload: TemplatePayload,
   extras: {
     status: 'DRAFT' | string
@@ -26,6 +27,7 @@ function buildUpsertRow(
 ) {
   return {
     user_id: userId,
+    account_id: accountId,
     name: payload.name,
     category: payload.category,
     language: payload.language,
@@ -74,14 +76,11 @@ async function upsertTemplateRow(
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError || !user) {
+    const ctx = await getCurrentAccount().catch(() => null)
+    if (!ctx) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const { supabase, userId, accountId } = ctx
 
     let payload: TemplatePayload
     try {
@@ -125,7 +124,7 @@ export async function POST(request: Request) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('account_id', accountId)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -161,7 +160,7 @@ export async function POST(request: Request) {
         // until they fix and re-submit.
         await upsertTemplateRow(
           supabase,
-          buildUpsertRow(user.id, payload, {
+          buildUpsertRow(userId, accountId, payload, {
             status: 'DRAFT',
             metaTemplateId: null,
             submissionError: message,
@@ -181,7 +180,7 @@ export async function POST(request: Request) {
 
     const { data: row, error: upsertErr } = await upsertTemplateRow(
       supabase,
-      buildUpsertRow(user.id, payload, {
+      buildUpsertRow(userId, accountId, payload, {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,
