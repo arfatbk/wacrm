@@ -130,7 +130,7 @@ export async function POST(request: Request) {
         .delete()
         .eq('message_id', targetMessage.id)
         .eq('actor_type', 'agent')
-        .eq('actor_id', user.id);
+        .eq('actor_id', userId);
 
       if (delError) {
         console.error('[whatsapp/react] DB delete failed:', delError.message);
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
           message_id: targetMessage.id,
           conversation_id: targetMessage.conversation_id,
           actor_type: 'agent',
-          actor_id: user.id,
+          actor_id: userId,
           emoji,
         },
         { onConflict: 'message_id,actor_type,actor_id' },
