@@ -32,7 +32,8 @@ export interface AudienceConfig {
 export type VariableMapping =
   | { type: 'static'; value: string }
   | { type: 'field'; value: string }
-  | { type: 'custom_field'; value: string };
+  | { type: 'custom_field'; value: string }
+  | { type: 'csv_column'; value: string };
 
 interface BroadcastPayload {
   name: string;
@@ -95,7 +96,7 @@ export function resolveVariables(
     const v = variables[key];
     if (v.type === 'static') return v.value;
 
-    if (v.type === 'field') {
+    if (v.type === 'field' || v.type === 'csv_column') {
       const fieldMap: Record<string, string | undefined> = {
         name: contact.name,
         phone: contact.phone,
@@ -268,6 +269,17 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
       for (const c of (inserted ?? []) as Contact[]) {
         if (c.phone) byPhone.set(c.phone, c);
+      }
+    }
+
+    // For existing contacts that have a name in the CSV, patch the in-memory
+    // record so resolveVariables uses the CSV name (not the stale DB name).
+    // We do NOT write this back to the DB — the CSV name is for this send only.
+    for (const phone of phones) {
+      const csvName = uniqueByPhone.get(phone)?.name;
+      if (csvName && byPhone.has(phone)) {
+        const contact = byPhone.get(phone)!;
+        byPhone.set(phone, { ...contact, name: csvName });
       }
     }
 

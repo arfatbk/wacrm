@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,37 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
+  FileText,
+  AlertCircle,
 } from 'lucide-react';
+
+function parseCsv(text: string): { contacts: { phone: string; name?: string }[]; error: string | null } {
+  // Strip UTF-8 BOM
+  const cleaned = text.replace(/^\uFEFF/, '').trim();
+  const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return { contacts: [], error: 'The file is empty.' };
+
+  // Detect delimiter: comma or semicolon
+  const delim = lines[0].includes(';') ? ';' : ',';
+
+  const headers = lines[0].split(delim).map((h) => h.trim().toLowerCase().replace(/^"|"$/g, ''));
+  const phoneIdx = headers.findIndex((h) => h === 'phone' || h === 'phone_number' || h === 'phonenumber' || h === 'mobile');
+  if (phoneIdx === -1) return { contacts: [], error: 'No "phone" column found. Expected header: phone,name' };
+
+  const nameIdx = headers.findIndex((h) => h === 'name' || h === 'full_name' || h === 'fullname');
+
+  const contacts: { phone: string; name?: string }[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(delim).map((c) => c.trim().replace(/^"|"$/g, ''));
+    const phone = cols[phoneIdx]?.trim();
+    if (!phone) continue;
+    const name = nameIdx !== -1 ? cols[nameIdx]?.trim() || undefined : undefined;
+    contacts.push({ phone, ...(name ? { name } : {}) });
+  }
+
+  if (contacts.length === 0) return { contacts: [], error: 'No valid rows found after the header.' };
+  return { contacts, error: null };
+}
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -89,6 +119,9 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [csvDragOver, setCsvDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -234,6 +267,26 @@ export function Step2SelectAudience({
       value: '',
     };
     onUpdate({ ...audience, customField: { ...prev, ...patch } });
+  }
+
+  function handleCsvFile(file: File) {
+    setCsvError(null);
+    if (!file.name.match(/\.(csv|txt)$/i)) {
+      setCsvError('Please upload a .csv or .txt file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const { contacts, error } = parseCsv(text);
+      if (error) {
+        setCsvError(error);
+        onUpdate({ ...audience, csvContacts: [] });
+      } else {
+        onUpdate({ ...audience, csvContacts: contacts });
+      }
+    };
+    reader.readAsText(file);
   }
 
   const isValid =
@@ -384,6 +437,101 @@ export function Step2SelectAudience({
                 placeholder="Value"
                 className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-primary focus:ring-1 focus:ring-primary"
               />
+            </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+          <p className="text-sm font-medium text-white">Upload CSV File</p>
+          <p className="text-xs text-slate-400">
+            Required column: <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">phone</code>
+            {' '}— Optional: <code className="rounded bg-slate-800 px-1 py-0.5 text-slate-300">name</code>
+          </p>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setCsvDragOver(true); }}
+            onDragLeave={() => setCsvDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setCsvDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) handleCsvFile(file);
+            }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed py-8 transition-colors ${
+              csvDragOver
+                ? 'border-primary bg-primary/5'
+                : 'border-slate-700 hover:border-slate-500'
+            }`}
+          >
+            <Upload className="h-7 w-7 text-slate-400" />
+            <p className="text-sm text-slate-400">
+              Drop a CSV here or <span className="text-primary underline">browse</span>
+            </p>
+            <p className="text-xs text-slate-500">.csv or .txt, any size</p>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleCsvFile(file);
+              e.target.value = '';
+            }}
+          />
+
+          {csvError && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+              <p className="text-xs text-red-300">{csvError}</p>
+            </div>
+          )}
+
+          {audience.csvContacts && audience.csvContacts.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-primary" />
+                  <span className="text-sm text-white">
+                    {audience.csvContacts.length.toLocaleString()} contacts loaded
+                  </span>
+                </div>
+                <button
+                  onClick={() => { onUpdate({ ...audience, csvContacts: [] }); setCsvError(null); }}
+                  className="text-xs text-slate-400 hover:text-red-400"
+                >
+                  Clear
+                </button>
+              </div>
+              {/* Preview first 5 rows */}
+              <div className="overflow-hidden rounded-lg border border-slate-700">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-700 bg-slate-800/50">
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">Phone</th>
+                      <th className="px-3 py-2 text-left font-medium text-slate-400">Name</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {audience.csvContacts.slice(0, 5).map((c, i) => (
+                      <tr key={i} className="border-b border-slate-800 last:border-0">
+                        <td className="px-3 py-2 text-slate-300">{c.phone}</td>
+                        <td className="px-3 py-2 text-slate-400">{c.name ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {audience.csvContacts.length > 5 && (
+                  <p className="px-3 py-2 text-center text-xs text-slate-500">
+                    +{(audience.csvContacts.length - 5).toLocaleString()} more
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

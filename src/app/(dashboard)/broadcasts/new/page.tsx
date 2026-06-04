@@ -39,7 +39,7 @@ export default function NewBroadcastPage() {
     excludeTagIds?: string[];
   }>({ type: 'all' });
   const [variables, setVariables] = useState<
-    Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
+    Record<string, { type: 'static' | 'field' | 'custom_field' | 'csv_column'; value: string }>
   >({});
   const [name, setName] = useState('');
 
@@ -203,6 +203,14 @@ export default function NewBroadcastPage() {
               onUpdate={setVariables}
               onNext={() => setCurrentStep(3)}
               onBack={() => setCurrentStep(1)}
+              csvColumns={
+                audience.type === 'csv' && audience.csvContacts && audience.csvContacts.length > 0
+                  ? [
+                      'phone',
+                      ...(audience.csvContacts.some((r) => r.name) ? ['name'] : []),
+                    ]
+                  : undefined
+              }
             />
           )}
           {currentStep === 3 && template && (

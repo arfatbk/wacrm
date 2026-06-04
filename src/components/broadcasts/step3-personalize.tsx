@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react';
 
-type VariableType = 'static' | 'field' | 'custom_field';
+type VariableType = 'static' | 'field' | 'custom_field' | 'csv_column';
 
 interface VariableMapping {
   type: VariableType;
@@ -27,6 +27,7 @@ interface Step3Props {
   onUpdate: (variables: Record<string, VariableMapping>) => void;
   onNext: () => void;
   onBack: () => void;
+  csvColumns?: string[];
 }
 
 const contactFields = [
@@ -53,6 +54,7 @@ export function Step3Personalize({
   onUpdate,
   onNext,
   onBack,
+  csvColumns,
 }: Step3Props) {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
@@ -166,6 +168,15 @@ export function Step3Personalize({
           replacement = fieldMap[mapping.value] ?? placeholder;
         } else if (mapping.type === 'custom_field' && mapping.value) {
           replacement = customValues.get(mapping.value) || placeholder;
+        } else if (mapping.type === 'csv_column' && mapping.value) {
+          const csvContact = firstContact ?? SAMPLE_CONTACT;
+          const fieldMap: Record<string, string | undefined> = {
+            name: csvContact.name,
+            phone: csvContact.phone,
+            email: csvContact.email,
+            company: csvContact.company,
+          };
+          replacement = fieldMap[mapping.value] ?? placeholder;
         }
       }
       text = text.replaceAll(placeholder, replacement);
@@ -239,13 +250,16 @@ export function Step3Personalize({
                         <SelectItem value="custom_field">
                           Custom Field
                         </SelectItem>
+                        {csvColumns && csvColumns.length > 0 && (
+                          <SelectItem value="csv_column">CSV Column</SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-slate-400">
-                      {mapping.type === 'static' ? 'Value' : 'Field'}
+                      {mapping.type === 'static' ? 'Value' : mapping.type === 'csv_column' ? 'CSV Column' : 'Field'}
                     </label>
                     {mapping.type === 'static' ? (
                       <Input
@@ -270,6 +284,24 @@ export function Step3Personalize({
                           {contactFields.map((field) => (
                             <SelectItem key={field.value} value={field.value}>
                               {field.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : mapping.type === 'csv_column' ? (
+                      <Select
+                        value={mapping.value || undefined}
+                        onValueChange={(val) =>
+                          updateVariable(key, { value: val || '' })
+                        }
+                      >
+                        <SelectTrigger className="w-full border-slate-700 bg-slate-800 text-white">
+                          <SelectValue placeholder="Select CSV column…" />
+                        </SelectTrigger>
+                        <SelectContent className="border-slate-700 bg-slate-800">
+                          {(csvColumns ?? []).map((col) => (
+                            <SelectItem key={col} value={col}>
+                              {col}
                             </SelectItem>
                           ))}
                         </SelectContent>
