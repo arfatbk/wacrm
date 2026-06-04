@@ -122,6 +122,28 @@ function extractSampleValues(
   return sv
 }
 
+/**
+ * Extract named variable identifiers from template text.
+ * Named variables use word-character identifiers: {{name}}, {{order_id}}.
+ * Positional variables use integers: {{1}}, {{2}} — these are ignored.
+ * Returns null when only positional or no variables are found.
+ */
+function extractNamedParams(text: string | undefined | null): string[] | null {
+  if (!text) return null
+  const matches = [...text.matchAll(/\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g)]
+  if (matches.length === 0) return null
+  // Preserve order of first appearance, deduplicate.
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const m of matches) {
+    if (!seen.has(m[1])) {
+      seen.add(m[1])
+      names.push(m[1])
+    }
+  }
+  return names.length > 0 ? names : null
+}
+
 export async function POST() {
   try {
     const ctx = await getCurrentAccount().catch(() => null)
@@ -202,6 +224,12 @@ export async function POST() {
 
       const parsedButtons = parseButtons(buttons?.buttons)
       const sampleValues = extractSampleValues(body, header)
+      const bodyParamNames = extractNamedParams(body?.text ?? null)
+      const headerParamName = (() => {
+        if (header?.format?.toUpperCase() !== 'TEXT') return null
+        const names = extractNamedParams(header?.text ?? null)
+        return names?.[0] ?? null
+      })()
 
       const headerFormat = header?.format?.toUpperCase()
       const headerType =
@@ -225,6 +253,8 @@ export async function POST() {
         footer_text: footer?.text ?? null,
         buttons: parsedButtons.length ? parsedButtons : null,
         sample_values: sampleValues,
+        body_param_names: bodyParamNames,
+        header_param_name: headerParamName,
         status: normalizeStatus(t.status),
         meta_template_id: t.id,
         quality_score: normalizeQualityScore(t.quality_score),

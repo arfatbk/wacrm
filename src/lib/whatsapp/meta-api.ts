@@ -420,6 +420,8 @@ export async function sendTemplateMessage(
     body.context = { message_id: contextMessageId }
   }
 
+//Keep it
+  console.log('Sending template message with payload:', JSON.stringify(body));
   const response = await fetch(url, {
     method: 'POST',
     headers: {

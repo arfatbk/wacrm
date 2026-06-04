@@ -259,6 +259,18 @@ export interface MessageTemplate {
   footer_text?: string;
   buttons?: TemplateButton[];
   sample_values?: TemplateSampleValues;
+  /**
+   * Ordered named-variable identifiers for the body component.
+   * Present when the template uses named placeholders like {{name}},
+   * {{order_id}} instead of positional {{1}}, {{2}}.
+   * NULL / absent for positional or no-variable templates.
+   */
+  body_param_names?: string[] | null;
+  /**
+   * Named-variable identifier for a TEXT header with a single named
+   * placeholder. NULL for media headers, static headers, or {{1}}.
+   */
+  header_param_name?: string | null;
   status?: MessageTemplateStatus;
   meta_template_id?: string;
   rejection_reason?: string;

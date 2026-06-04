@@ -62,7 +62,7 @@ export type MetaSendComponent =
     };
 
 type MetaSendParameter =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; parameter_name?: string }
   | { type: 'image'; image: { link?: string; id?: string } }
   | { type: 'video'; video: { link?: string; id?: string } }
   | { type: 'document'; document: { link?: string; id?: string } }
@@ -80,25 +80,40 @@ function buildHeaderComponent(
     // TEXT header with {{1}} → need a value. Static text headers
     // (no variables) just ride along inside the template itself; no
     // header component required on send.
-    const varCount = extractVariableIndices(template.header_content ?? '').length;
+    // Named variable (e.g. {{greeting}}) takes precedence; fall back to
+    // positional {{1}} detection for legacy templates.
+    const hasNamedVar = !!template.header_param_name;
+    const varCount = hasNamedVar ? 1 : extractVariableIndices(template.header_content ?? '').length;
     if (varCount === 0) return null;
     const value = params.headerText;
     if (!value || !value.trim()) {
       throw new Error(
-        'Header text variable {{1}} requires a value — pass headerText.',
+        'Header text variable requires a value — pass headerText.',
       );
     }
+    const headerTextParam: MetaSendParameter = { type: 'text', text: value };
+    if (template.header_param_name) headerTextParam.parameter_name = template.header_param_name;
     return {
       type: 'header',
-      parameters: [{ type: 'text', text: value }],
+      parameters: [headerTextParam],
     };
   }
 
   // image / video / document — Meta requires the media component on
   // every send. Prefer the caller's explicit override; fall back to
   // the template's stored sample.
-  const link = params.headerMediaUrl ?? template.header_media_url;
-  const id = params.headerMediaId ?? template.header_handle;
+  // Resolve link vs id: caller may pass a URL as headerMediaId (or
+  // header_handle may contain a CDN URL) — treat those as links so
+  // Meta doesn't reject them with a type error (id must be integer).
+  const isUrl = (v: string | undefined | null) =>
+    typeof v === 'string' && (v.startsWith('http://') || v.startsWith('https://'));
+
+  const rawId = params.headerMediaId ?? template.header_handle;
+  const resolvedLink = params.headerMediaUrl ?? template.header_media_url ?? (isUrl(rawId) ? rawId : undefined);
+  const resolvedId = isUrl(rawId) ? undefined : rawId;
+
+  const link = resolvedLink;
+  const id = resolvedId;
   if (!link && !id) {
     throw new Error(
       `${headerType} header requires a media link or id at send time — set header_media_url on the template or pass headerMediaUrl/headerMediaId.`,
@@ -121,7 +136,10 @@ function buildBodyComponent(
   template: MessageTemplate,
   params: SendTimeParams,
 ): MetaSendComponent | null {
-  const varCount = extractVariableIndices(template.body_text).length;
+  const paramNames = template.body_param_names ?? null;
+  // For named-variable templates, variable count comes from the stored
+  // param names list; for positional templates, parse {{N}} from the text.
+  const varCount = paramNames ? paramNames.length : extractVariableIndices(template.body_text).length;
   const body = params.body ?? [];
   if (varCount === 0 && body.length === 0) return null;
   if (body.length < varCount) {
@@ -134,7 +152,11 @@ function buildBodyComponent(
   const values = body.slice(0, varCount);
   return {
     type: 'body',
-    parameters: values.map((text) => ({ type: 'text', text: String(text) })),
+    parameters: values.map((text, i) => {
+      const p: MetaSendParameter = { type: 'text', text: String(text) };
+      if (paramNames?.[i]) p.parameter_name = paramNames[i];
+      return p;
+    }),
   };
 }
 

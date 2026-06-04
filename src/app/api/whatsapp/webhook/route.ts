@@ -181,6 +181,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  console.log('[webhook] incoming payload:', JSON.stringify(body, null, 2))
+
   // Process asynchronously so we can ack Meta within their timeout.
   processWebhook(body).catch((error) => {
     console.error('Error processing webhook:', error)
